@@ -860,6 +860,7 @@ const defaultSettings = {
   brightnessAtStartup: true,
   killWhenIdle: false,
   remaps: {},
+  topologyRemaps: {},
   hotkeys: [],
   hotkeyPercent: 10,
   adjustmentTimes: [],
@@ -1230,6 +1231,16 @@ function processSettings(newSettings = {}, sendUpdate = true) {
     updateStartupOption((settings.openAtLogin || false))
     applyOrder()
     applyRemaps()
+
+    if (newSettings.remaps !== undefined || newSettings.topologyRemaps !== undefined) {
+      for (let id in monitors) {
+        const monitor = monitors[id]
+        if (monitor.brightnessRaw !== undefined) {
+          monitor.brightness = normalizeBrightness(monitor.brightnessRaw, true, monitor.min, monitor.max, monitor.calibration)
+        }
+      }
+      sendToAllWindows('monitors-updated', monitors)
+    }
 
     if (settings.killWhenIdle && mainWindow && mainWindow.isAlwaysOnTop() === false) {
       mainWindow.close()
@@ -2005,14 +2016,76 @@ function applyOrder(monitorList = monitors) {
   }
 }
 
+const INTERNAL_CONNECTORS = ["internal", "displayport_embedded", "udi_embedded", "ldvs", "lvds"]
+
+function isInternalMonitor(monitor) {
+  if (!monitor) return false
+  if (monitor.type === "wmi") return true
+  if (monitor.connector && INTERNAL_CONNECTORS.includes(monitor.connector.toLowerCase())) return true
+  return false
+}
+
+function getActiveMonitors(monitorList = monitors) {
+  const list = (monitorList && Object.keys(monitorList).length > 0) ? monitorList : monitors
+  const active = []
+  for (let key in list) {
+    const monitor = list[key]
+    if (monitor && monitor.type !== "none" && monitor.type !== undefined && settings?.hideDisplays?.[monitor.key] !== true) {
+      active.push(monitor)
+    }
+  }
+  return active
+}
+
+function getTopologyKey(monitorList = monitors) {
+  const active = getActiveMonitors(monitorList)
+  if (!active.length) return "none"
+  const sortedIds = active.map(m => m.id || m.key || m.name).sort()
+  return sortedIds.join("||")
+}
+
+function isStandaloneInternal(monitorList = monitors) {
+  const active = getActiveMonitors(monitorList)
+  return active.length === 1 && isInternalMonitor(active[0])
+}
+
 function applyRemaps(monitorList = monitors) {
+  const topologyKey = getTopologyKey(monitorList)
+  const standalone = isStandaloneInternal(monitorList)
   for (let key in monitorList) {
     const monitor = monitorList[key]
-    applyRemap(monitor)
+    applyRemap(monitor, topologyKey, standalone)
   }
 }
 
-function applyRemap(monitor) {
+function applyRemap(monitor, topologyKey, standalone) {
+  if (topologyKey === undefined) topologyKey = getTopologyKey()
+  if (standalone === undefined) standalone = isStandaloneInternal()
+
+  // 1. Check topology-specific remap if available
+  const topRemaps = settings.topologyRemaps?.[topologyKey]?.remaps
+  if (topRemaps) {
+    for (let remapName in topRemaps) {
+      if (remapName == monitor.name || remapName == monitor.id) {
+        let remap = topRemaps[remapName]
+        monitor.min = remap.min
+        monitor.max = remap.max
+        monitor.calibration = remap.calibration
+        if (remapName == monitor.id) return monitor;
+      }
+    }
+  }
+
+  // 2. If standalone (laptop internal screen only, no external screen attached),
+  // default to unconstrained 0%-100% full brightness range.
+  if (standalone && isInternalMonitor(monitor)) {
+    monitor.min = 0
+    monitor.max = 100
+    monitor.calibration = []
+    return monitor
+  }
+
+  // 3. Fallback to legacy global settings.remaps
   if (settings.remaps) {
     for (let remapName in settings.remaps) {
       if (remapName == monitor.name || remapName == monitor.id) {
@@ -2020,11 +2093,14 @@ function applyRemap(monitor) {
         monitor.min = remap.min
         monitor.max = remap.max
         monitor.calibration = remap.calibration
-        // Stop if using new scheme
         if (remapName == monitor.id) return monitor;
       }
     }
   }
+
+  monitor.min = 0
+  monitor.max = 100
+  monitor.calibration = []
   return monitor
 }
 

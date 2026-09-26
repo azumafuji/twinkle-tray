@@ -1,6 +1,6 @@
 {
   "name": "twinkle-tray",
-  "version": "1.18.0-beta2",
+  "version": "1.18.0-beta3",
   "description": "Manage the brightness of monitors from your system tray",
   "main": "src/electron.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "clean": "npm ci",
     "dev": "electron . --dev",
     "electron-build": "electron-builder --x64",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "patch-package && electron-builder install-app-deps",
     "appx": "npm run parcel-build && electron-builder --x64 -w appx -c.extraMetadata.name=twinkle-tray-appx -c.win.artifactName=\"${productName} v${version}-store.${ext}\"",
     "appx-unsigned": "npm run parcel-build && electron-builder --x64 -w appx -c.appx.publisher=\"CN=AppModelSamples, OID.2.25.311729368913984317654407730594956997722=1\" -c.extraMetadata.name=twinkle-tray-appx -c.win.artifactName=\"${productName} v${version}-unsigned.${ext}\"",
     "portable": "npm run parcel-build && electron-builder --x64 -w zip -c.extraMetadata.name=twinkle-tray-portable -c.win.artifactName=\"${productName} v${version}-portable.${ext}\" -c.win.compression=normal",
@@ -43,8 +43,8 @@
     "suncalc": "^1.9.0",
     "tt-windows-utils": "file:src/modules/tt-windows-utils",
     "win32-displayconfig": "file:src/modules/win32-displayconfig",
-    "windows-ambient-sensor": "file:src/modules/windows-ambient-sensor",
     "windows-accent-colors": "^1.0.2",
+    "windows-ambient-sensor": "file:src/modules/windows-ambient-sensor",
     "windows-hdr": "file:src/modules/windows-hdr",
     "wmi-bridge": "file:src/modules/wmi-bridge",
     "wmi-client": "^0.5.0",
@@ -57,7 +57,9 @@
     "productName": "Twinkle Tray",
     "appId": "com.xanderfrangos.twinkle-tray",
     "compression": "normal",
-    "electronLanguages": ["en-US"],
+    "electronLanguages": [
+      "en-US"
+    ],
     "afterPack": "resources/afterPack.js",
     "directories": {
       "buildResources": "resources"
@@ -217,6 +219,7 @@
     "node-addon-api": "^8.2.2",
     "node-gyp": "^12.1.0",
     "parcel-bundler": "^1.12.5",
+    "patch-package": "^8.0.1",
     "react": "18.3.1",
     "react-beautiful-dnd": "^13.1.1",
     "react-dom": "18.3.1",

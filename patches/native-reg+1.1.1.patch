@@ -1,0 +1,23 @@
+diff --git a/node_modules/native-reg/binding.gyp b/node_modules/native-reg/binding.gyp
+index 1ccd037..ca04a5d 100644
+--- a/node_modules/native-reg/binding.gyp
++++ b/node_modules/native-reg/binding.gyp
+@@ -3,7 +3,7 @@
+     {
+       "target_name": "reg",
+       "dependencies": [
+-        "<!(node -p \"require('node-addon-api').gyp\")"
++        "../node-addon-api/node_addon_api.gyp:node_addon_api_except"
+       ],
+       "include_dirs": [
+         "<!@(node -p \"require('node-addon-api').include\")",
+@@ -20,8 +20,7 @@
+         "VCCLCompilerTool": {
+           "AdditionalOptions": [
+             "/std:c++17"
+-          ],
+-          "ExceptionHandling": 1
++          ]
+         },
+       }
+     }

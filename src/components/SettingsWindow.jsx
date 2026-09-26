@@ -128,7 +128,8 @@ export default class SettingsWindow extends PureComponent {
             openAtLogin: false,
             brightnessAtStartup: true,
             monitors: [],
-            remaps: [],
+            remaps: {},
+            topologyRemaps: {},
             names: [],
             hotkeys: [],
             adjustmentTimes: [],
@@ -259,73 +260,181 @@ export default class SettingsWindow extends PureComponent {
 
 
 
-    getRemap = (name) => {
-        if (this.state.remaps[name] === undefined) {
-            return {
-                isFallback: true,
-                min: 0,
-                max: 100,
-                calibration: []
-            }
-        }
-        return this.state.remaps[name]
+    isInternalMonitor = (monitor) => {
+        if (!monitor) return false
+        if (monitor.type === "wmi") return true
+        const INTERNAL_CONNECTORS = ["internal", "displayport_embedded", "udi_embedded", "ldvs", "lvds"]
+        if (monitor.connector && INTERNAL_CONNECTORS.includes(monitor.connector.toLowerCase())) return true
+        return false
     }
 
+    getActiveMonitors = (monitorList = this.state.monitors) => {
+        const active = []
+        for (let key in monitorList) {
+            const monitor = monitorList[key]
+            if (monitor && monitor.type !== "none" && monitor.type !== undefined && this.state.rawSettings?.hideDisplays?.[monitor.key] !== true) {
+                active.push(monitor)
+            }
+        }
+        return active
+    }
 
-    minMaxChanged = (value, slider) => {
+    getTopologyKey = (monitorList = this.state.monitors) => {
+        const active = this.getActiveMonitors(monitorList)
+        if (!active.length) return "none"
+        const sortedIds = active.map(m => m.id || m.key || m.name).sort()
+        return sortedIds.join("||")
+    }
 
-        const name = slider.props.monitorID
-        let remaps = Object.assign({}, this.state.remaps)
+    isStandaloneInternal = (monitorList = this.state.monitors) => {
+        const active = this.getActiveMonitors(monitorList)
+        return active.length === 1 && this.isInternalMonitor(active[0])
+    }
 
-        if (remaps[name] === undefined) {
-            remaps[name] = {
+    getTopologyDisplayName = (monitorList = this.state.monitors) => {
+        const active = this.getActiveMonitors(monitorList)
+        if (!active.length) return ""
+        if (this.isStandaloneInternal(monitorList)) {
+            return getMonitorName(active[0], this.state.names) + " (" + T.t("SETTINGS_MONITORS_STANDALONE", "Standalone") + ")"
+        }
+        return active.map(m => getMonitorName(m, this.state.names)).join(" + ")
+    }
+
+    renderActiveTopologyInfo = () => {
+        const displayName = this.getTopologyDisplayName()
+        if (!displayName) return null
+        const isStandalone = this.isStandaloneInternal()
+        return (
+            <div className="settings-active-topology" style={{
+                background: "rgba(128, 128, 128, 0.12)",
+                padding: "10px 14px",
+                borderRadius: "6px",
+                marginBottom: "16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px"
+            }}>
+                <span className="icon" style={{ fontSize: "20px" }}>&#xE7F4;</span>
+                <div>
+                    <div style={{ fontWeight: 600 }}>
+                        {T.t("SETTINGS_MONITORS_CURRENT_SETUP", "Active Setup")}: {displayName}
+                    </div>
+                    <div style={{ fontSize: "12px", opacity: 0.8, marginTop: "2px" }}>
+                        {isStandalone
+                            ? T.t("SETTINGS_MONITORS_STANDALONE_DESC", "No external displays detected. The internal display uses its full brightness range (0%–100%) by default.")
+                            : T.t("SETTINGS_MONITORS_TOPOLOGY_DESC", "Normalization settings below are saved automatically for this connected display setup.")
+                        }
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    getTopologyRemapContainer = (topologyKey) => {
+        let topologyRemaps = Object.assign({}, this.state.topologyRemaps || {})
+        if (!topologyRemaps[topologyKey]) {
+            topologyRemaps[topologyKey] = {
+                name: this.getTopologyDisplayName(),
+                remaps: {}
+            }
+        } else {
+            topologyRemaps[topologyKey] = {
+                ...topologyRemaps[topologyKey],
+                remaps: Object.assign({}, topologyRemaps[topologyKey].remaps || {})
+            }
+        }
+        return topologyRemaps
+    }
+
+    getRemap = (name, monitor = null) => {
+        const topologyKey = this.getTopologyKey()
+        const topRemaps = this.state.topologyRemaps?.[topologyKey]?.remaps
+        if (topRemaps && topRemaps[name] !== undefined) {
+            return topRemaps[name]
+        }
+
+        // If standalone laptop internal display, default to 0-100 unconstrained
+        const isStandalone = this.isStandaloneInternal()
+        let mon = monitor
+        if (!mon && this.state.monitors) {
+            mon = Object.values(this.state.monitors).find(m => m.id === name || m.name === name)
+        }
+        if (isStandalone && (!mon || this.isInternalMonitor(mon))) {
+            return {
                 min: 0,
                 max: 100,
-                calibration: []
+                calibration: [],
+                isFallback: true
             }
+        }
+
+        if (this.state.remaps && this.state.remaps[name] !== undefined) {
+            return this.state.remaps[name]
+        }
+
+        return {
+            isFallback: true,
+            min: 0,
+            max: 100,
+            calibration: []
+        }
+    }
+
+    saveRemap = (name, newRemap) => {
+        const topologyKey = this.getTopologyKey()
+        let topologyRemaps = this.getTopologyRemapContainer(topologyKey)
+        topologyRemaps[topologyKey].remaps[name] = newRemap
+
+        let remaps = Object.assign({}, this.state.remaps || {})
+        remaps[name] = newRemap
+
+        this.setState({ topologyRemaps, remaps })
+        window.sendSettings({ topologyRemaps, remaps })
+    }
+
+    minMaxChanged = (value, slider) => {
+        const name = slider.props.monitorID
+        const currentRemap = this.getRemap(name)
+        let remapItem = {
+            min: currentRemap.min,
+            max: currentRemap.max,
+            calibration: (currentRemap.calibration || []).slice()
         }
 
         if (slider.props.type == "min") {
-            remaps[name].min = value
+            remapItem.min = value
 
             // Keep within 10%, cap
-
-            if (remaps[name].min > remaps[name].max - 10) {
-                remaps[name].max = remaps[name].min + 10
+            if (remapItem.min > remapItem.max - 10) {
+                remapItem.max = remapItem.min + 10
             }
 
-            if (remaps[name].max > 100) {
-                remaps[name].max = 100
+            if (remapItem.max > 100) {
+                remapItem.max = 100
             }
 
-            if (remaps[name].min > remaps[name].max - 10) {
-                remaps[name].min = remaps[name].max - 10
+            if (remapItem.min > remapItem.max - 10) {
+                remapItem.min = remapItem.max - 10
             }
 
         } else if (slider.props.type == "max") {
-            remaps[name].max = value
+            remapItem.max = value
 
             // Keep within 10%, cap
-
-            if (remaps[name].min > remaps[name].max - 10) {
-                remaps[name].min = remaps[name].max - 10
+            if (remapItem.min > remapItem.max - 10) {
+                remapItem.min = remapItem.max - 10
             }
 
-            if (remaps[name].min < 0) {
-                remaps[name].min = 0
+            if (remapItem.min < 0) {
+                remapItem.min = 0
             }
 
-            if (remaps[name].min > remaps[name].max - 10) {
-                remaps[name].max = remaps[name].min + 10
+            if (remapItem.min > remapItem.max - 10) {
+                remapItem.max = remapItem.min + 10
             }
         }
 
-        const oldData = JSON.stringify(this.state.remaps);
-        const newData = JSON.stringify(remaps);
-        const hasChanged = (oldData == newData ? false : true);
-        //if(!hasChanged) return false;
-        this.setState({ remaps })
-        window.sendSettings({ remaps })
+        this.saveRemap(name, remapItem)
     }
 
     themeChanged = (event) => {
@@ -470,10 +579,10 @@ export default class SettingsWindow extends PureComponent {
                     return (<div key={monitor.name}></div>)
                 } else {
                     // New method, by ID
-                    let remap = this.getRemap(monitor.id)
+                    let remap = this.getRemap(monitor.id, monitor)
                     // Old method, by name
                     if (remap.isFallback) {
-                        remap = this.getRemap(monitor.name)
+                        remap = this.getRemap(monitor.name, monitor)
                     }
                     return (
                         <SettingsOption key={monitor.id} icon="E7F4" title={getMonitorName(monitor, this.state.names)}>
@@ -491,7 +600,7 @@ export default class SettingsWindow extends PureComponent {
                             } />
                             <SettingsChild content={
                                 <div className="calibration-points-menu">
-                                    { this.getMonitorCalibration(monitor.id) }
+                                    { this.getMonitorCalibration(monitor.id, monitor) }
                                     <div className="input-row">
                                         <div className="button" onClick={() => this.addCalibrationPoint(monitor.id)}>+ {T.t("GENERIC_CALIBRATION_POINT")}</div>
                                     </div>
@@ -505,10 +614,10 @@ export default class SettingsWindow extends PureComponent {
         }
     }
 
-    getMonitorCalibration = (monitorID) => {
+    getMonitorCalibration = (monitorID, monitor = null) => {
         const pointsElems = []
 
-        const remap = this.getRemap(monitorID)
+        const remap = this.getRemap(monitorID, monitor)
 
         if(remap) for(const pointIdx in remap.calibration) {
             const point = remap.calibration[pointIdx]
@@ -533,38 +642,39 @@ export default class SettingsWindow extends PureComponent {
     }
 
     addCalibrationPoint = (monitorID) => {
-        if (this.state.remaps[monitorID] === undefined) {
-            this.state.remaps[monitorID] = {
-                min: 0,
-                max: 100,
-                calibration: []
-            }
+        const currentRemap = this.getRemap(monitorID)
+        let remapItem = {
+            min: currentRemap.min,
+            max: currentRemap.max,
+            calibration: (currentRemap.calibration || []).slice()
         }
-
-        const remap = this.getRemap(monitorID)
-        if(remap) {
-            if(!remap.calibration) remap.calibration = [];
-            remap.calibration.push({ input: 0, output: 100 })
-            this.setState({ remaps: { ...this.state.remaps } })
-            window.sendSettings({ remaps: this.state.remaps })
-        }
+        remapItem.calibration.push({ input: 0, output: 100 })
+        this.saveRemap(monitorID, remapItem)
     }
 
     updateCalibrationPoint = (monitorID, pointIdx, field, value) => {
-        const remap = this.getRemap(monitorID)
-        if(remap && remap.calibration[pointIdx]) {
-            remap.calibration[pointIdx][field] = value
-            this.setState({ remaps: { ...this.state.remaps } })
-            window.sendSettings({ remaps: this.state.remaps })
+        const currentRemap = this.getRemap(monitorID)
+        let remapItem = {
+            min: currentRemap.min,
+            max: currentRemap.max,
+            calibration: (currentRemap.calibration || []).map(p => ({ ...p }))
+        }
+        if (remapItem.calibration[pointIdx]) {
+            remapItem.calibration[pointIdx][field] = value
+            this.saveRemap(monitorID, remapItem)
         }
     }
 
     deleteCalibrationPoint = (monitorID, pointIdx) => {
-        const remap = this.getRemap(monitorID)
-        if(remap && remap.calibration[pointIdx]) {
-            remap.calibration.splice(pointIdx, 1)
-            this.setState({ remaps: { ...this.state.remaps } })
-            window.sendSettings({ remaps: this.state.remaps })
+        const currentRemap = this.getRemap(monitorID)
+        let remapItem = {
+            min: currentRemap.min,
+            max: currentRemap.max,
+            calibration: (currentRemap.calibration || []).map(p => ({ ...p }))
+        }
+        if (remapItem.calibration[pointIdx]) {
+            remapItem.calibration.splice(pointIdx, 1)
+            this.saveRemap(monitorID, remapItem)
         }
     }
 
@@ -1174,6 +1284,7 @@ export default class SettingsWindow extends PureComponent {
         const linkedLevelsActive = (settings.linkedLevelsActive || false)
         const updateInterval = (settings.updateInterval || 500) * 1
         const remaps = (settings.remaps || {})
+        const topologyRemaps = (settings.topologyRemaps || {})
         const names = (settings.names || {})
         const adjustmentTimes = (settings.adjustmentTimes || {})
         const killWhenIdle = (settings.killWhenIdle || false)
@@ -1193,6 +1304,7 @@ export default class SettingsWindow extends PureComponent {
             brightnessAtStartup,
             linkedLevelsActive,
             remaps,
+            topologyRemaps,
             updateInterval,
             names,
             adjustmentTimes,
@@ -1505,6 +1617,7 @@ export default class SettingsWindow extends PureComponent {
                                     <div className="sectionTitle">{T.t("SETTINGS_MONITORS_NORMALIZE_TITLE")}</div>
                                     <p>{T.t("SETTINGS_MONITORS_NORMALIZE_DESC")}</p>
                                     <p>{T.t("SETTINGS_MONITORS_CALIBRATION_DESC")}</p>
+                                    {this.renderActiveTopologyInfo()}
                                     {this.getMinMaxMonitors()}
                                 </div>
 

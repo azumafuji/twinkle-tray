@@ -94,10 +94,12 @@ const BrightnessPanel = memo(function BrightnessPanel() {
     if (numMonitors > 0) {
       let newMonitors = Object.assign((inMonitors ? inMonitors : state.monitors), {})
       for (let key in newMonitors) {
-        for (let remap in state.remaps) {
-          if (newMonitors[key].name == remap) {
-            newMonitors[key].min = state.remaps[remap].min
-            newMonitors[key].max = state.remaps[remap].max
+        if (newMonitors[key].min === undefined || newMonitors[key].max === undefined) {
+          for (let remap in state.remaps) {
+            if (newMonitors[key].name == remap || newMonitors[key].id == remap) {
+              newMonitors[key].min = state.remaps[remap].min
+              newMonitors[key].max = state.remaps[remap].max
+            }
           }
         }
       }

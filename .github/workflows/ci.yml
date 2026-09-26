@@ -37,7 +37,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Build Win32 installer
-        run: npm exec electron-builder -- --x64 --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}.exe" --publish="never"
+        run: npm exec electron-builder -- --x64 --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.extraMetadata.repository="${{ github.repository }}" --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}.exe" --publish="never"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
@@ -55,7 +55,7 @@ jobs:
           
       - name: Build x64 AppX
         if: ${{ env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'ci-test' || startsWith(github.ref, 'refs/tags/v') }}
-        run: npm exec electron-builder -- --x64 --win appx --config.npmRebuild=false --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.extraMetadata.version=${{ steps.date.outputs.time }} --config.extraMetadata.name=twinkle-tray-appx --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}-store.appx" --publish="never"
+        run: npm exec electron-builder -- --x64 --win appx --config.npmRebuild=false --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.extraMetadata.version=${{ steps.date.outputs.time }} --config.extraMetadata.repository="${{ github.repository }}" --config.extraMetadata.name=twinkle-tray-appx --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}-store.appx" --publish="never"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
@@ -72,7 +72,7 @@ jobs:
 
       - name: Build ARM64 installer
         if: ${{ env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'ci-test' || startsWith(github.ref, 'refs/tags/v') }}
-        run: npm exec electron-builder -- --arm64 --config.npmRebuild=false --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}-arm64.exe" --publish="never"
+        run: npm exec electron-builder -- --arm64 --config.npmRebuild=false --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.extraMetadata.repository="${{ github.repository }}" --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}-arm64.exe" --publish="never"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
@@ -85,7 +85,7 @@ jobs:
           
       - name: Build ARM64 AppX
         if: ${{ env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'ci-test' || startsWith(github.ref, 'refs/tags/v') }}
-        run: npm exec electron-builder -- --arm64 --win appx --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.extraMetadata.version=${{ steps.date.outputs.time }} --config.extraMetadata.name=twinkle-tray-appx --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}-store-arm64.appx" --config.npmRebuild=false --publish="never"
+        run: npm exec electron-builder -- --arm64 --win appx --config.extraMetadata.versionBuild="${{ steps.info.outputs.version }}+${{ github.sha }}" --config.extraMetadata.version=${{ steps.date.outputs.time }} --config.extraMetadata.repository="${{ github.repository }}" --config.extraMetadata.name=twinkle-tray-appx --config.win.artifactName="Twinkle.Tray.v${{ steps.info.outputs.version }}-store-arm64.appx" --config.npmRebuild=false --publish="never"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           

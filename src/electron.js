@@ -4893,6 +4893,26 @@ ipcMain.on("windowClose", e => {
 
 
 
+function getUpdateRepository() {
+  const repo = package?.extraMetadata?.repository || package?.repository?.url || package?.repository
+  if (repo && typeof repo === 'string') {
+    const match = repo.match(/github\.com[/:]([^/]+\/[^/.]+)/)
+    if (match) return match[1].replace(/\.git$/, '')
+    if (/^[^/]+\/[^/]+$/.test(repo.trim())) return repo.trim()
+  }
+
+  if (isDev) {
+    try {
+      const { execSync } = require('child_process')
+      const gitRemote = execSync('git config --get remote.origin.url', { encoding: 'utf8', timeout: 1000 }).trim()
+      const match = gitRemote.match(/github\.com[/:]([^/]+\/[^/.]+)/)
+      if (match) return match[1].replace(/\.git$/, '')
+    } catch (e) {}
+  }
+
+  return "xanderfrangos/twinkle-tray"
+}
+
 let latestVersion = false
 let lastCheck = false
 checkForUpdates = async (force = false) => {
@@ -4904,29 +4924,46 @@ checkForUpdates = async (force = false) => {
   lastCheck = new Date().getDate()
   try {
     if (isAppX === false) {
-      console.log("Checking for updates...")
-      fetch("https://api.github.com/repos/xanderfrangos/twinkle-tray/releases").then((response) => {
+      const repoSlug = getUpdateRepository()
+      console.log(`Checking for updates from ${repoSlug}...`)
+      fetch(`https://api.github.com/repos/${repoSlug}/releases`).then((response) => {
         response.json().then((releases) => {
+          if (!Array.isArray(releases)) {
+            console.log("No releases found or API limit exceeded", releases)
+            return
+          }
           let foundVersion = false
           for (let release of releases) {
             if (!(settings.branch === "master" && release.prerelease === true)) {
 
-              // Skip versions older than current
-              const versionParsed =  Utils.getVersionValue(release.tag_name)
-              const appVersionValue = Utils.getVersionValue(`v${app.getVersion()}`)
-              if(versionParsed < appVersionValue) continue;
+              // Skip versions older than or equal to current
+              const appVer = "v" + app.getVersion()
+              const isNewer = Utils.compareSemver ? (Utils.compareSemver(release.tag_name, appVer) > 0) : (Utils.getVersionValue(release.tag_name) > Utils.getVersionValue(appVer))
+              if (!isNewer) continue;
+
+              // Find the installer asset matching this system's architecture
+              let asset = null
+              if (Array.isArray(release.assets) && release.assets.length > 0) {
+                if (process.arch === "arm64") {
+                  asset = release.assets.find(a => a.name.endsWith("-arm64.exe")) || release.assets.find(a => a.name.endsWith(".exe"))
+                } else {
+                  asset = release.assets.find(a => a.name.endsWith(".exe") && !a.name.endsWith("-arm64.exe")) || release.assets.find(a => a.name.endsWith(".exe"))
+                }
+              }
+
+              if (!asset) continue;
 
               foundVersion = true
               latestVersion = {
-                releaseURL: (release.html_url),
+                releaseURL: release.html_url,
                 version: release.tag_name,
-                downloadURL: release.assets[0]["browser_download_url"],
-                filesize: release.assets[0]["size"],
+                downloadURL: asset.browser_download_url,
+                filesize: asset.size,
                 changelog: release.body,
                 show: false,
                 error: false
               }
-              console.log("Found version: " + latestVersion.version)
+              console.log("Found newer version: " + latestVersion.version)
               break
             }
           }

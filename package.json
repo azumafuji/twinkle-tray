@@ -30,6 +30,10 @@
   ],
   "author": "Xander Frangos",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/azumafuji/twinkle-tray.git"
+  },
   "dependencies": {
     "@hensm/ddcci": "file:src/modules/node-ddcci",
     "@paymoapp/active-window": "file:src/modules/node-active-window",

@@ -227,6 +227,7 @@ Flag to show brightness levels in the panel
     },
     upgradeAdjustmentTimes,
     getVersionValue,
+    compareSemver,
     lerp,
     parseTime,
     getCalibratedValue
@@ -264,6 +265,25 @@ function getVersionValue(version = 'v1.0.0') {
     let out = version.split('-')[0].replace("v", "").split(".")
     out = (out[0] * 10000 * 10000) + (out[1] * 10000) + (out[2] * 1)
     return parseInt(out)
+}
+
+function parseSemver(v) {
+    if (!v) return null;
+    const m = v.toString().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+    if (!m) return null;
+    return { major: +m[1], minor: +m[2], patch: +m[3], prerelease: m[4] || '' };
+}
+
+function compareSemver(a, b) {
+    const pa = parseSemver(a), pb = parseSemver(b);
+    if (!pa || !pb) return 0;
+    if (pa.major !== pb.major) return pa.major - pb.major;
+    if (pa.minor !== pb.minor) return pa.minor - pb.minor;
+    if (pa.patch !== pb.patch) return pa.patch - pb.patch;
+    if (!pa.prerelease && !pb.prerelease) return 0;
+    if (!pa.prerelease && pb.prerelease) return 1;
+    if (pa.prerelease && !pb.prerelease) return -1;
+    return pa.prerelease.localeCompare(pb.prerelease, undefined, { numeric: true });
 }
 
 function lerp(start, finish, perc) {

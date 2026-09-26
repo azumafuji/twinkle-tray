@@ -103,6 +103,7 @@ jobs:
           files: |
             dist/*.exe
             dist/*.appx
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(steps.info.outputs.version, '-beta') || contains(steps.info.outputs.version, '-alpha') }}

@@ -1543,6 +1543,7 @@ getBrightnessWMI = () => {
 
                 let wmiInfo = {
                     id: `\\\\?\\${hwid[0]}#${hwid[1]}#${hwid[2]}`,
+                    key: hwid[2],
                     brightness: monitor.Brightness,
                     hwid: hwid,
                     min: 0,
@@ -1638,6 +1639,7 @@ getBrightnessDDC = (monitorObj, includeFeatures = true, reportReadFailure = fals
 }
 
 updateDisplay = (monitors, hwid2, info = {}) => {
+    if (!hwid2 || hwid2 === "undefined") return false;
     if (!monitors[hwid2]) {
         monitors[hwid2] = {
             id: null,
@@ -2021,6 +2023,7 @@ const getBrightnessWMIC = async () => {
 
                         let wmiInfo = {
                             id: `\\\\?\\${hwid[0]}#${hwid[1]}#${hwid[2]}`,
+                            key: hwid[2],
                             brightness: monitor.CurrentBrightness,
                             hwid: hwid,
                             min: 0,

@@ -130,7 +130,7 @@ export default class SettingsWindow extends PureComponent {
             monitors: [],
             remaps: {},
             topologyRemaps: {},
-            names: [],
+            names: {},
             hotkeys: [],
             adjustmentTimes: [],
             linkedLevelsActive: false,
@@ -451,18 +451,33 @@ export default class SettingsWindow extends PureComponent {
         window.sendSettings({ sleepAction: event.target.value })
     }
 
-    monitorNameChange = (e, f) => {
-        const idx = e.currentTarget.dataset.key
-        this.state.names[window.allMonitors[idx].id] = e.currentTarget.value
-        this.forceUpdate()
-        window.sendSettings({ names: this.state.names })
+    monitorNameChange = (monitorOrId, valueOrEvent) => {
+        let monitorId
+        let value
+        if (typeof monitorOrId === "string") {
+            monitorId = monitorOrId
+            value = valueOrEvent
+        } else if (monitorOrId && monitorOrId.currentTarget) {
+            const e = monitorOrId
+            monitorId = e.currentTarget.dataset.monitorId || (window.allMonitors?.[e.currentTarget.dataset.key]?.id)
+            value = e.currentTarget.value
+        }
+        if (!monitorId) return
+
+        const names = Object.assign({}, this.state.names)
+        delete names[""]
+        delete names["undefined"]
+        delete names[undefined]
+        names[monitorId] = value
+        this.setState({ names })
+        window.sendSettings({ names })
     }
 
     getMonitorName = (monitor, renames) => {
-        if (Object.keys(renames).indexOf(monitor.id) >= 0 && renames[monitor.id] != "") {
+        if (renames && monitor?.id && Object.keys(renames).indexOf(monitor.id) >= 0 && renames[monitor.id] != "") {
             return renames[monitor.id] + ` (${monitor.name})`
         } else {
-            return monitor.name
+            return monitor?.name
         }
     }
 
@@ -686,9 +701,17 @@ export default class SettingsWindow extends PureComponent {
                 if (monitor.type == "none") {
                     return null
                 } else {
+                    const monitorId = monitor.id || monitor.key
                     return (
-                        <SettingsChild key={monitor.id} icon="E7F4" title={monitor.name} input={(
-                            <input type="text" placeholder={T.t("SETTINGS_MONITORS_ENTER_NAME")} data-key={monitor.key} onChange={this.monitorNameChange} value={(this.state.names[monitor.id] ? this.state.names[monitor.id] : "")}></input>
+                        <SettingsChild key={monitor.id || index} icon="E7F4" title={monitor.name} input={(
+                            <input
+                                type="text"
+                                placeholder={T.t("SETTINGS_MONITORS_ENTER_NAME")}
+                                data-key={monitor.key}
+                                data-monitor-id={monitorId}
+                                onChange={(e) => this.monitorNameChange(monitorId, e.target.value)}
+                                value={(this.state.names && monitorId && this.state.names[monitorId]) ? this.state.names[monitorId] : ""}
+                            />
                         )} />
                     )
                 }
@@ -1285,7 +1308,10 @@ export default class SettingsWindow extends PureComponent {
         const updateInterval = (settings.updateInterval || 500) * 1
         const remaps = (settings.remaps || {})
         const topologyRemaps = (settings.topologyRemaps || {})
-        const names = (settings.names || {})
+        const names = Object.assign({}, settings.names || {})
+        delete names[""]
+        delete names["undefined"]
+        delete names[undefined]
         const adjustmentTimes = (settings.adjustmentTimes || {})
         const killWhenIdle = (settings.killWhenIdle || false)
         const order = (settings.order || [])

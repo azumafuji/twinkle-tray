@@ -59,6 +59,18 @@ function gammaFeaturesActive() {
     return false
 }
 
+function shouldHideInternalDisplay(monitorOrHwid2, win32Displays = lastWin32) {
+    if (settings?.hideClosedLid === false) return false
+    if (!win32Displays || Object.keys(win32Displays).length === 0) return false
+
+    let key = monitorOrHwid2
+    if (typeof monitorOrHwid2 === "object" && monitorOrHwid2 !== null) {
+        key = monitorOrHwid2.key || monitorOrHwid2.hwid?.[2]
+    }
+    if (!key) return true
+    return !win32Displays[key] && Object.keys(win32Displays).indexOf(key) < 0
+}
+
 // Gamma ramps are owned by Windows, not by us, so the level is read back on
 // every refresh instead of being assumed from the last value set.
 function readGammaBrightness(monitors) {
@@ -553,7 +565,7 @@ refreshMonitors = async (fullRefresh = false, ddcciType = "default", alwaysSendU
                         updateDisplay(monitors, wmiBrightness.hwid[2], wmiBrightness)
 
                         // If Win32 doesn't find the internal display, hide it.
-                        if (settings?.hideClosedLid && Object.keys(monitorsWin32).indexOf(wmiBrightness.hwid[2]) < 0) {
+                        if (shouldHideInternalDisplay(wmiBrightness.hwid[2], monitorsWin32)) {
                             updateDisplay(monitors, wmiBrightness.hwid[2], { type: "none" })
                         }
                     }
@@ -585,11 +597,9 @@ refreshMonitors = async (fullRefresh = false, ddcciType = "default", alwaysSendU
             }
 
             // Hide internal
-            if (settings?.hideClosedLid) {
-                const wmiMonitor = Object.values(monitors).find(mon => mon.type === "wmi")
-                if (wmiMonitor && !monitorsWin32[wmiMonitor.hwid[2]]) {
-                    updateDisplay(monitors, wmiMonitor.hwid[2], { type: "none" })
-                }
+            const wmiMonitor = Object.values(monitors).find(mon => mon.type === "wmi")
+            if (wmiMonitor && shouldHideInternalDisplay(wmiMonitor, monitorsWin32)) {
+                updateDisplay(monitors, wmiMonitor.hwid[2], { type: "none" })
             }
 
         }
@@ -629,7 +639,12 @@ async function readKnownBrightness() {
     if (canUseInternalBrightness()) {
         try {
             const wmiBrightness = await getBrightnessInternal()
-            if (wmiBrightness) updateDisplay(monitors, wmiBrightness.hwid[2], wmiBrightness)
+            if (wmiBrightness) {
+                updateDisplay(monitors, wmiBrightness.hwid[2], wmiBrightness)
+                if (shouldHideInternalDisplay(wmiBrightness.hwid[2], lastWin32)) {
+                    updateDisplay(monitors, wmiBrightness.hwid[2], { type: "none" })
+                }
+            }
         } catch (e) {
             console.log("\x1b[41mgetKnownBrightnessInternal() failed!\x1b[0m", e)
         }
@@ -869,7 +884,7 @@ getAllMonitors = async (ddcciMethod = "default", coreOnly = false) => {
                 updateDisplay(foundMonitors, wmiBrightness.hwid[2], wmiBrightness)
 
                 // If Win32 doesn't find the internal display, hide it.
-                if (settings?.hideClosedLid && Object.keys(monitorsWin32).indexOf(wmiBrightness.hwid[2]) < 0) {
+                if (shouldHideInternalDisplay(wmiBrightness.hwid[2], monitorsWin32)) {
                     updateDisplay(foundMonitors, wmiBrightness.hwid[2], { type: "none" })
                 }
             }
@@ -905,11 +920,9 @@ getAllMonitors = async (ddcciMethod = "default", coreOnly = false) => {
     applySoftwareBrightness(foundMonitors)
 
     // Hide internal
-    if (settings?.hideClosedLid) {
-        const wmiMonitor = Object.values(foundMonitors).find(mon => mon.type === "wmi")
-        if (wmiMonitor && !monitorsWin32[wmiMonitor.hwid[2]]) {
-            updateDisplay(foundMonitors, wmiMonitor.hwid[2], { type: "none" })
-        }
+    const wmiMonitor = Object.values(foundMonitors).find(mon => mon.type === "wmi")
+    if (wmiMonitor && shouldHideInternalDisplay(wmiMonitor, monitorsWin32)) {
+        updateDisplay(foundMonitors, wmiMonitor.hwid[2], { type: "none" })
     }
 
     // Finally, fix names/num
@@ -1255,6 +1268,7 @@ getMonitorsWMI = () => {
                     if (!monitor.InstanceName) continue;
 
                     let hwid = readInstanceName(monitor.InstanceName)
+                    if (!hwid || !hwid[2] || hwid[2] === "undefined") continue;
                     hwid[2] = hwid[2].split("_")[0]
 
                     const wmiInfo = {
@@ -1539,6 +1553,11 @@ getBrightnessWMI = () => {
                 resolve(false)
             } else {
                 let hwid = readInstanceName(monitor.InstanceName)
+                if (!hwid || !hwid[2] || hwid[2] === "undefined") {
+                    clearTimeout(timeout)
+                    resolve(false)
+                    return
+                }
                 hwid[2] = hwid[2].split("_")[0]
 
                 let wmiInfo = {
@@ -1643,7 +1662,7 @@ updateDisplay = (monitors, hwid2, info = {}) => {
     if (!monitors[hwid2]) {
         monitors[hwid2] = {
             id: null,
-            key: null,
+            key: hwid2,
             num: null,
             brightness: 50,
             brightnessMax: 100,
@@ -1658,6 +1677,9 @@ updateDisplay = (monitors, hwid2, info = {}) => {
         }
     }
     Object.assign(monitors[hwid2], info)
+    if (!monitors[hwid2].key) {
+        monitors[hwid2].key = hwid2
+    }
     return true
 }
 
@@ -1976,6 +1998,7 @@ getMonitorsWMIC = () => {
                     if (!monitor.InstanceName) continue;
 
                     let hwid = readInstanceName(monitor.InstanceName)
+                    if (!hwid || !hwid[2] || hwid[2] === "undefined") continue;
                     hwid[2] = hwid[2].split("_")[0]
 
                     const wmiInfo = {
@@ -2019,6 +2042,7 @@ const getBrightnessWMIC = async () => {
                     for (let monitor of result) {
 
                         let hwid = readInstanceName(monitor.InstanceName)
+                        if (!hwid || !hwid[2] || hwid[2] === "undefined") continue;
                         hwid[2] = hwid[2].split("_")[0]
 
                         let wmiInfo = {

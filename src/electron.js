@@ -896,7 +896,7 @@ const defaultSettings = {
   enableSunValley: true,
   isWin11: isReallyWin11,
   windowsStyle: "system",
-  hideClosedLid: false,
+  hideClosedLid: true,
   getDDCBrightnessUpdates: false,
   detectIdleTimeEnabled: false,
   detectIdleTimeSeconds: 0,
@@ -1168,6 +1168,12 @@ function readSettings(doProcessSettings = true) {
     if(settings.hdrDisplays) delete settings.hdrDisplays;
   }
 
+  // v1.18.0: Default hideClosedLid to true so inactive internal displays are hidden
+  if (!settings.hideClosedLidMigrated) {
+    settings.hideClosedLid = true
+    settings.hideClosedLidMigrated = true
+  }
+
   if (doProcessSettings) processSettings({ isReadSettings: true });
 }
 
@@ -1247,6 +1253,10 @@ function processSettings(newSettings = {}, sendUpdate = true) {
     }
 
     if (newSettings.adjustmentTimes !== undefined) {
+      sortAdjustmentTimes(settings.adjustmentTimes)
+      if (settings.adjustmentTimes.length === 0) {
+        tempSettings.pauseTimeAdjustments = false
+      }
       lastTimeEvent = false
       restartBackgroundUpdate()
       rebuildTray = true
@@ -1317,6 +1327,9 @@ function processSettings(newSettings = {}, sendUpdate = true) {
     }
 
     if (newSettings.detectIdleTimeEnabled === true || newSettings.detectIdleTimeEnabled === false) {
+      if (!settings.detectIdleTimeEnabled) {
+        tempSettings.pauseIdleDetection = false
+      }
       rebuildTray = true
     }
 
@@ -1408,6 +1421,7 @@ function processSettings(newSettings = {}, sendUpdate = true) {
 
     if (rebuildTray) {
       setTrayMenu()
+      updateTrayToolTip()
     }
 
     if (mainWindow && doRestartPanel) {
@@ -1625,6 +1639,9 @@ function getKnownDisplays(useCurrentMonitors) {
     known = Object.assign(known, JSON.parse(JSON.stringify(monitors)))
   }
 
+  delete known["undefined"]
+  delete known["null"]
+
   return known
 }
 
@@ -1652,7 +1669,7 @@ function applyProfile(profile = {}, useTransition = false, transitionSpeed = 1, 
     for (const hwid in profile) {
       try {
         const monitor = profile[hwid]
-        if(shouldSkipDisplay(monitor)) continue;
+        if(shouldSkipDisplay(monitor) || monitor.type === "none" || settings?.hideDisplays?.[monitor.key] === true) continue;
         transitionMonitors[monitor.id] = monitor.brightness
       } catch (e) { console.log("Couldn't set brightness for known display!") }
     }
@@ -1662,7 +1679,7 @@ function applyProfile(profile = {}, useTransition = false, transitionSpeed = 1, 
     for (const hwid in profile) {
       try {
         const monitor = profile[hwid]
-        if(shouldSkipDisplay(monitor)) continue;
+        if(shouldSkipDisplay(monitor) || monitor.type === "none" || settings?.hideDisplays?.[monitor.key] === true) continue;
 
         // Apply brightness to valid display types
         if (monitor.type == "wmi" || monitor.type == "studio-display" || monitor.type == "software" || (monitor.type == "ddcci" && monitor.brightnessType) || usesGammaSlider(monitor)) {
@@ -3084,6 +3101,10 @@ function updateBrightness(index, newLevel, useCap = true, vcpValue = "brightness
     if (settings.hideDisplays?.[monitor.key] === true) {
       return false
     }
+
+    if (monitor.type === "none") {
+      return false
+    }
     
 
     if(vcp == "brightness" && monitor.hdr === "active" && settings.sdrAsMainSliderDisplays?.[monitor.key]) {
@@ -3288,7 +3309,9 @@ function updateAllBrightness(brightness, mode = "offset") {
 
   // Send brightness updates
   for (let key in monitors) {
-    updateBrightnessThrottle(monitors[key].id, monitors[key].brightness, true, false)
+    if (monitors[key].type !== "none" && !(settings?.hideDisplays?.[monitors[key].key] === true)) {
+      updateBrightnessThrottle(monitors[key].id, monitors[key].brightness, true, false)
+    }
   }
 }
 
@@ -3371,11 +3394,11 @@ function transitionBrightness(level, eventMonitors = [], stepSpeed = 1) {
       } else {
         updateBrightness(monitor.id, (monitor.brightness < normalized ? monitor.brightness + step : monitor.brightness - step), undefined, undefined, false)
       }
-      sendToAllWindows('monitors-updated', monitors)
-      if (numDone === Object.keys(monitors).length) {
-        clearInterval(currentTransition);
-        currentTransition = null
-      }
+    }
+    sendToAllWindows('monitors-updated', monitors)
+    if (numDone === Object.keys(monitors).length) {
+      clearInterval(currentTransition);
+      currentTransition = null
     }
   }, settings.updateInterval * transitionIntervalMult)
 }
@@ -3389,8 +3412,8 @@ function transitionlessBrightness(level, eventMonitors = []) {
       normalized = (eventMonitors[monitor.id] >= 0 ? eventMonitors[monitor.id] : level)
     }
     updateBrightness(monitor.id, normalized)
-    sendToAllWindows('monitors-updated', monitors)
   }
+  sendToAllWindows('monitors-updated', monitors)
 }
 
 function applyAnimatedBrightness(level, eventMonitors = [], readableMonitorIds = false) {
@@ -3411,7 +3434,8 @@ function applyAnimatedBrightness(level, eventMonitors = [], readableMonitorIds =
       didUpdate = true
     }
   }
-  if (didUpdate) sendToAllWindows('monitors-updated', monitors)
+  setTrayPercent()
+  sendToAllWindows('monitors-updated', monitors)
 }
 
 // Flag recent user activity to skip certain events
@@ -4242,6 +4266,7 @@ function showPanel(show = true, height = 300) {
     pauseMouseEvents(false)
     mainWindow.setOpacity(1)
     mainWindow.show()
+    sendToAllWindows('monitors-updated', monitors)
     sendToAllWindows('panel-position', mainWindow.getPosition())
     sendToAllWindows("playPanelAnimation")
 
@@ -4466,13 +4491,41 @@ app.on('quit', () => {
 //
 //
 
+let lastTrayAveragePercent = null
+function updateTrayToolTip(averagePerc = null) {
+  try {
+    if (!tray) return;
+    if (typeof averagePerc === "number") {
+      lastTrayAveragePercent = averagePerc
+    }
+    let tip = 'Twinkle Tray' + (isDev ? " (Dev)" : "")
+    if (lastTrayAveragePercent !== null && lastTrayAveragePercent >= 0) {
+      tip += ' (' + lastTrayAveragePercent + '%)'
+    }
+    const pausedLabels = []
+    if (tempSettings.pauseTimeAdjustments && settings.adjustmentTimes?.length) {
+      pausedLabels.push(T.t("GENERIC_PAUSED_TOD") || "Time adjustments paused")
+    }
+    if (tempSettings.pauseIdleDetection && settings.detectIdleTimeEnabled) {
+      pausedLabels.push(T.t("GENERIC_PAUSED_IDLE") || "Idle detection paused")
+    }
+    if (pausedLabels.length > 0) {
+      tip += ' - ' + pausedLabels.join(', ')
+    }
+    tray.setToolTip(tip)
+  } catch (e) {
+    console.log(e)
+  }
+}
+
 function createTray() {
   if (tray != null) return false;
 
   const { Tray } = require('electron')
   tray = new Tray(getTrayIconPath())
-  tray.setToolTip('Twinkle Tray' + (isDev ? " (Dev)" : ""))
+  updateTrayToolTip()
   setTrayMenu()
+  tray.on("right-click", () => setTrayMenu())
   tray.on("click", async () => toggleTray(true))
 
   let lastMouseMove = Date.now()
@@ -4506,6 +4559,21 @@ async function recreateTray() {
   recreatingTray = false
 }
 
+function setPauseTimeAdjustments(paused) {
+  tempSettings.pauseTimeAdjustments = !!paused
+  setTrayMenu()
+  updateTrayToolTip()
+  if (!tempSettings.pauseTimeAdjustments) {
+    applyCurrentAdjustmentEvent(true, false)
+  }
+}
+
+function setPauseIdleDetection(paused) {
+  tempSettings.pauseIdleDetection = !!paused
+  setTrayMenu()
+  updateTrayToolTip()
+}
+
 function setTrayMenu() {
   if (tray === null) return false;
 
@@ -4532,14 +4600,28 @@ function getPausableSeparatorMenuItem() {
 
 function getTimeAdjustmentsMenuItem() {
   if (settings.adjustmentTimes?.length) {
-    return { label: T.t("GENERIC_PAUSE_TOD"), type: 'checkbox', click: (e) => tempSettings.pauseTimeAdjustments = e.checked }
+    const isPaused = !!tempSettings.pauseTimeAdjustments
+    const pausedSuffix = isPaused ? ` (${T.t("GENERIC_PAUSED") || "Paused"})` : ""
+    return {
+      label: T.t("GENERIC_PAUSE_TOD") + pausedSuffix,
+      type: 'checkbox',
+      checked: isPaused,
+      click: (menuItem) => setPauseTimeAdjustments(menuItem.checked)
+    }
   }
   return { label: "", visible: false }
 }
 
 function getDetectIdleMenuItem() {
   if (settings.detectIdleTimeEnabled) {
-    return { label: T.t("GENERIC_PAUSE_IDLE"), type: 'checkbox', click: (e) => tempSettings.pauseIdleDetection = e.checked }
+    const isPaused = !!tempSettings.pauseIdleDetection
+    const pausedSuffix = isPaused ? ` (${T.t("GENERIC_PAUSED") || "Paused"})` : ""
+    return {
+      label: T.t("GENERIC_PAUSE_IDLE") + pausedSuffix,
+      type: 'checkbox',
+      checked: isPaused,
+      click: (menuItem) => setPauseIdleDetection(menuItem.checked)
+    }
   }
   return { label: "", visible: false }
 }
@@ -4579,20 +4661,24 @@ function getDebugTrayMenuItems() {
   }
 }
 
+
 function setTrayPercent() {
   try {
     if (tray) {
       let averagePerc = 0
       let i = 0
-      for (let key in monitors) {
-        if (monitors[key].type === "ddcci" || monitors[key].type === "wmi" || monitors[key].type === "software" || usesGammaSlider(monitors[key])) {
+      const active = getActiveMonitors()
+      for (const monitor of active) {
+        if (monitor.type === "ddcci" || monitor.type === "studio-display" || monitor.type === "wmi" || monitor.type === "software" || usesGammaSlider(monitor)) {
           i++
-          averagePerc += monitors[key].brightness
+          averagePerc += monitor.brightness
         }
       }
       if (i > 0) {
-        averagePerc = Math.floor(averagePerc / i)
-        tray.setToolTip('Twinkle Tray' + (isDev ? " (Dev)" : "") + ' (' + averagePerc + '%)')
+        averagePerc = Math.round(averagePerc / i)
+        updateTrayToolTip(averagePerc)
+      } else {
+        updateTrayToolTip(null)
       }
     }
   } catch (e) {
@@ -4846,14 +4932,21 @@ function createSettings() {
 
   // Sort Time of Day Adjustments
   // We're doing it here as it's least obtrusive to the UI. Refreshing when re-opening the window.
-  if (settings.adjustmentTimes?.length) {
-    settings.adjustmentTimes.sort((a, b) => {
-      const aVal = Utils.parseTime(a.time)
-      const bVal = Utils.parseTime(b.time)
+  sortAdjustmentTimes(settings.adjustmentTimes)
+
+}
+
+function sortAdjustmentTimes(times = settings.adjustmentTimes) {
+  if (times?.length) {
+    times.sort((a, b) => {
+      const aTime = (a.useSunCalc ? getSunCalcTime(a.sunCalc) : a.time)
+      const bTime = (b.useSunCalc ? getSunCalcTime(b.sunCalc) : b.time)
+      const aVal = Utils.parseTime(aTime)
+      const bVal = Utils.parseTime(bTime)
       return aVal - bVal
     })
   }
-
+  return times
 }
 
 function sendSettingsBounds() {
@@ -5547,6 +5640,7 @@ function getCurrentAdjustmentEvent() {
 
   // Find most recent event
   let foundEvent = false
+  let latestEvent = false
   try {
     for (let event of settings.adjustmentTimes) {
       const eventTime = (event.useSunCalc ? getSunCalcTime(event.sunCalc) : event.time)
@@ -5561,12 +5655,19 @@ function getCurrentAdjustmentEvent() {
           foundEvent.value = eventValue
         }
       }
+
+      // Track the latest event of the day as fallback for before-earliest-event (e.g. after midnight)
+      if (latestEvent === false || latestEvent.value <= eventValue) {
+        latestEvent = Object.assign({}, event)
+        latestEvent.monitors = Object.assign({}, event.monitors)
+        latestEvent.value = eventValue
+      }
     }
   } catch (e) {
     console.log("Error getting adjustment times!", e)
   }
 
-  return foundEvent
+  return (foundEvent ? foundEvent : latestEvent)
 }
 
 function getNextAdjustmentEvent() {
@@ -5614,32 +5715,33 @@ function getCurrentAdjustmentEventLERP() {
     const date = new Date()
     const nowValue = (date.getHours() * 60) + (date.getMinutes() * 1)
 
-    if (current.value > next.value) {
-      next.value += 1440 // Add 24hr if next event is tomorrow
+    let currentVal = current.value
+    let nextVal = next.value
+    let effectiveNow = nowValue
+
+    if (currentVal >= nextVal) {
+      nextVal += 1440 // Add 24hr if next event is tomorrow (or wrapped past midnight)
+      if (effectiveNow < currentVal) {
+        effectiveNow += 1440 // nowValue is in the morning following currentVal
+      }
     }
 
-    // Calculate 0-1 percentage of progress
-    const lerpValues = {
-      next: next.value - current.value,
-      current: current.value - current.value,
-      now: nowValue - current.value
-    }
-    lerpValues.progress = lerpValues.next - lerpValues.now
-    lerpValues.end = lerpValues.next
-    lerpValues.percent = 1 - (lerpValues.progress / lerpValues.end)
+    const duration = nextVal - currentVal
+    const elapsed = effectiveNow - currentVal
+    const percent = duration > 0 ? Math.min(Math.max(elapsed / duration, 0), 1) : 0
 
     // Generate result depending on if displays are linked
     if (settings.adjustmentTimeIndividualDisplays) {
-      const keys = Object.keys(next.monitors)
-      const monitors = Object.assign(current.monitors)
+      const keys = Array.from(new Set([...Object.keys(current.monitors || {}), ...Object.keys(next.monitors || {})]))
+      const monitors = Object.assign({}, current.monitors)
       keys.forEach(key => {
-        if (monitors[key] > -1) {
-          monitors[key] = Math.round(Utils.lerp(current.monitors[key], next.monitors[key], lerpValues.percent))
-        }
+        const fromLevel = (current.monitors?.[key] !== undefined && current.monitors[key] >= 0) ? current.monitors[key] : current.brightness
+        const toLevel = (next.monitors?.[key] !== undefined && next.monitors[key] >= 0) ? next.monitors[key] : next.brightness
+        monitors[key] = Math.round(Utils.lerp(fromLevel, toLevel, percent))
       })
       return monitors
     } else {
-      return Math.round(Utils.lerp(current.brightness, next.brightness, lerpValues.percent))
+      return Math.round(Utils.lerp(current.brightness, next.brightness, percent))
     }
   } catch (e) {
     console.log("Error generating Adjustment Time LERP", e)
@@ -5715,6 +5817,7 @@ function applyCurrentAdjustmentEvent(force = false, instant = true) {
                 const current = knownBrightness[monitor.id]
                 if (!current) continue
                 Object.assign(monitor, current)
+                monitor.brightness = normalizeBrightness(monitor.brightness, true, monitor.min, monitor.max, monitor.calibration)
                 if (settings.sdrAsMainSliderDisplays?.[monitor.key] && monitor.hdr === "active") {
                   monitor.brightness = monitor.sdrLevel
                 }
@@ -5722,7 +5825,7 @@ function applyCurrentAdjustmentEvent(force = false, instant = true) {
                   monitor.brightness = normalizeBrightness(monitor.gammaBrightness, true, monitor.min, monitor.max, monitor.calibration)
                 }
                 if (usesExtendedMinimum(monitor)) {
-                  monitor.brightness = getExtendedMinimumLevel(monitor, normalizeBrightness(monitor.brightness, true, monitor.min, monitor.max, monitor.calibration))
+                  monitor.brightness = getExtendedMinimumLevel(monitor, monitor.brightness)
                 }
               }
               applyAdjustment(new Set(Object.keys(knownBrightness)))
@@ -5741,11 +5844,7 @@ function applyCurrentAdjustmentEvent(force = false, instant = true) {
 }
 
 
-let lastTimeEvent = {
-  hour: new Date().getHours(),
-  minute: new Date().getMinutes(),
-  day: new Date().getDate()
-}
+let lastTimeEvent = false
 function handleBackgroundUpdate(force = false) {
   console.log("Event: handleBackgroundUpdate");
 

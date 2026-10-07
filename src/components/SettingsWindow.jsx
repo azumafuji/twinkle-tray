@@ -168,6 +168,17 @@ export default class SettingsWindow extends PureComponent {
         this.addFeatureCancelRef = React.createRef()
     }
 
+    flushSettings = () => {
+        if (this.sendSettingsTimeout) {
+            clearTimeout(this.sendSettingsTimeout)
+            this.sendSettingsTimeout = null
+        }
+        if (Object.keys(this.sendSettingsValues).length > 0) {
+            window.sendSettings(Object.assign({}, this.sendSettingsValues))
+            this.sendSettingsValues = {}
+        }
+    }
+
     sendSettingsThrottle = (newSetting = {}) => {
         this.sendSettingsValues = Object.assign(this.sendSettingsValues, newSetting)
         if (this.sendSettingsTimeout) {
@@ -176,10 +187,11 @@ export default class SettingsWindow extends PureComponent {
         this.sendSettingsTimeout = setTimeout(() => {
             window.sendSettings(Object.assign({}, this.sendSettingsValues))
             this.sendSettingsValues = {}
-        }, 2000)
+        }, 500)
     }
 
     componentDidMount() {
+        window.addEventListener("beforeunload", this.flushSettings)
         window.addEventListener("monitorsUpdated", this.recievedMonitors)
         window.addEventListener("settingsUpdated", this.recievedSettings)
         window.addEventListener("ddcSafetyStatus", this.recievedDDCSafetyStatus)
@@ -218,6 +230,8 @@ export default class SettingsWindow extends PureComponent {
     }
 
     componentWillUnmount() {
+        this.flushSettings()
+        window.removeEventListener("beforeunload", this.flushSettings)
         window.removeEventListener("nativeBrightnessKey", this.recievedNativeBrightnessKey)
         window.ipc.send("set-native-hotkey-recording", false)
     }

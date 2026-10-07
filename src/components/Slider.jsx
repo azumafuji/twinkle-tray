@@ -36,43 +36,48 @@ export default class Slider extends Component {
     }
 
     cap = (level) => {
-        const min = (this.props.min || 0) * 1
-        const max = (this.props.max || 100) * 1
-        let capped = level * 1
-        if (level < min) {
-            capped = min
-        } else if (level > max) {
-            capped = max
+        const min = (this.props.min !== undefined ? this.props.min : 0) * 1
+        const max = (this.props.max !== undefined ? this.props.max : 100) * 1
+        let val = Number(level)
+        if (isNaN(val)) {
+            val = (this.state && !isNaN(this.state.level)) ? this.state.level : min
         }
-        return capped
+        if (val < min) {
+            return min
+        } else if (val > max) {
+            return max
+        }
+        return val
     }
 
     progressStyle = () => {
-        const min = (this.props.min || 0) * 1
-        const max = (this.props.max || 100) * 1
-        const level = this.cap((this.props.level || 0) * 1)
-        return { width: (0 + (((level - min) * (100 / (max - min))))) + "%" }
+        const min = (this.props.min !== undefined ? this.props.min : 0) * 1
+        const max = (this.props.max !== undefined ? this.props.max : 100) * 1
+        const level = this.cap(this.props.level)
+        const range = max - min
+        const width = range > 0 ? ((level - min) * (100 / range)) : 0
+        return { width: width + "%" }
     }
 
     constructor(props) {
         super(props);
         this.state = {
-            level: this.cap((this.props.level === undefined ? 50 : this.props.level)),
+            level: this.cap(this.props.level ?? 50),
         }
         //this.fireChange()
     }
 
     componentDidUpdate(oldProps) {
-        if (oldProps.max != this.props.max || oldProps.min != this.props.min) {
+        if (oldProps.level !== this.props.level || oldProps.max !== this.props.max || oldProps.min !== this.props.min) {
             this.setState({
                 level: this.cap(this.props.level)
-            }, this.fireChange())
+            })
         }
     }
 
     render() {
-        const min = (this.props.min || 0) * 1
-        const max = (this.props.max || 100) * 1
+        const min = (this.props.min !== undefined ? this.props.min : 0) * 1
+        const max = (this.props.max !== undefined ? this.props.max : 100) * 1
         const level = this.cap(this.props.level)
         return (
             <div className="monitor-item" onWheel={this.handleWheel}>

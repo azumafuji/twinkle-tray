@@ -29,7 +29,7 @@ const BrightnessPanel = memo(function BrightnessPanel() {
   const [doBackgroundEvent, setDoBackgroundEvent] = useState(false)
   const [levelsChanged, setLevelsChanged] = useState(false)
   const [init, setInit] = useState(false)
-  const [lastLevels, setLastLevels] = useState([])
+  const [lastLevels, setLastLevels] = useState({})
   const [T] = useState(new TranslateReact({}, {}))
   const [, setLocalizationVersion] = useState(0)
 
@@ -61,7 +61,9 @@ const BrightnessPanel = memo(function BrightnessPanel() {
       // Update all monitors (linked)
       for (let key in monitors) {
         const monitor = monitors[key]
-        monitor.brightness = level
+        if (monitor && monitor.type !== "none" && !(state.hideDisplays?.[monitor.key] === true)) {
+          monitor.brightness = level
+        }
       }
       setState(prev => ({ ...prev, monitors }))
       setLevelsChanged(true)
@@ -79,7 +81,11 @@ const BrightnessPanel = memo(function BrightnessPanel() {
   // Update monitor info
   const recievedMonitors = (e) => {
     let newMonitors = { ...e.detail }
-    setLastLevels([])
+    const currentLevels = {}
+    for (let idx in newMonitors) {
+      currentLevels[idx] = newMonitors[idx].brightness
+    }
+    setLastLevels(currentLevels)
     // Reset panel height so it's recalculated
     panelHeight = -1
     setState(prev => ({
@@ -103,7 +109,6 @@ const BrightnessPanel = memo(function BrightnessPanel() {
           }
         }
       }
-      setLevelsChanged(true)
       if (inMonitors) {
         return inMonitors
       } else {
@@ -111,7 +116,6 @@ const BrightnessPanel = memo(function BrightnessPanel() {
           ...prev,
           monitors: newMonitors
         }))
-        setDoBackgroundEvent(true)
       }
     }
   }
@@ -125,7 +129,6 @@ const BrightnessPanel = memo(function BrightnessPanel() {
     const remaps = (settings.remaps || {})
     const names = (settings.names || {})
     const hideDisplays = (settings.hideDisplays || {})
-    setLevelsChanged(true)
     setState(prev => ({
       ...prev,
       linkedLevelsActive,
@@ -137,7 +140,6 @@ const BrightnessPanel = memo(function BrightnessPanel() {
     }))
     resetBrightnessInterval()
     updateMinMax()
-    setDoBackgroundEvent(true)
   }
 
   const recievedUpdate = (e) => {
@@ -157,12 +159,15 @@ const BrightnessPanel = memo(function BrightnessPanel() {
     if (init && levelsChanged && (window.showPanel || doBackgroundEvent) && numMonitors) {
       setDoBackgroundEvent(false)
       setLevelsChanged(false)
+      const nextLastLevels = { ...lastLevels }
       try {
         for (let idx in monitors) {
-          if (monitors[idx].type != "none" && monitors[idx].brightness != lastLevels[idx]) {
+          if (monitors[idx].type != "none" && !(state.hideDisplays?.[monitors[idx].key] === true) && monitors[idx].brightness != lastLevels[idx]) {
+            nextLastLevels[idx] = monitors[idx].brightness
             window.updateBrightness(monitors[idx].id, monitors[idx].brightness)
           }
         }
+        setLastLevels(nextLastLevels)
       } catch (e) {
         console.error("Could not update brightness")
       }
@@ -241,18 +246,34 @@ const BrightnessPanel = memo(function BrightnessPanel() {
       return (<div className="no-displays-message">{T.t("GENERIC_NO_COMPATIBLE_DISPLAYS")}</div>)
     } else {
       if (state.linkedLevelsActive) {
-        // Combine all monitors
-        let lastValidMonitor
-        for(const key in state.monitors) {
-          const monitor = state.monitors[key]
-          if(monitor.type == "wmi" || monitor.type == "studio-display" || monitor.type == "software" || (monitor.type == "ddcci" && monitor.brightnessType) || monitor.hdr === "active" || usesGammaSlider(monitor)) {
-           lastValidMonitor = monitor 
-          }
-        }
-        if (lastValidMonitor) {
-          const monitor = lastValidMonitor
+        // Combine all valid, non-hidden monitors
+        const validMonitors = Object.values(state.monitors).filter(m => 
+          m && m.type !== "none" && 
+          !window.settings?.hideDisplays?.[m.key] &&
+          (m.type === "wmi" || m.type === "studio-display" || m.type === "software" || 
+           (m.type === "ddcci" && m.brightnessType) || m.hdr === "active" || usesGammaSlider(m))
+        ).sort((a, b) => {
+          const aSort = (a.order === undefined ? 999 : a.order * 1)
+          const bSort = (b.order === undefined ? 999 : b.order * 1)
+          return aSort - bSort
+        })
+
+        if (validMonitors.length > 0) {
+          const primaryMonitor = validMonitors.find(m => m.num === 0) || validMonitors[0]
           return (
-            <Slider name={T.t("GENERIC_ALL_DISPLAYS")} id={monitor.id} level={monitor.brightness} min={0} max={100} num={monitor.num} monitortype={monitor.type} hwid={monitor.key} key={monitor.key} onChange={handleChange} scrollAmount={window.settings?.scrollFlyoutAmount} />
+            <Slider
+              name={T.t("GENERIC_ALL_DISPLAYS")}
+              id={primaryMonitor.id}
+              level={primaryMonitor.brightness}
+              min={0}
+              max={100}
+              num={primaryMonitor.num}
+              monitortype={primaryMonitor.type}
+              hwid={primaryMonitor.key || primaryMonitor.id}
+              key="linked-slider"
+              onChange={handleChange}
+              scrollAmount={window.settings?.scrollFlyoutAmount}
+            />
           )
         }
         return (<div className="no-displays-message">{T.t("GENERIC_NO_COMPATIBLE_DISPLAYS")}</div>)

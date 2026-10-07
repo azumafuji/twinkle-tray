@@ -189,6 +189,7 @@ function dismissUpdate() {
 ipc.on('tray-clicked', () => {
     window.document.getElementById("root").dataset["sleep"] = false
     setPanelVisibility(true)
+    requestMonitors()
 })
 
 ipc.on("panelBlur", (e) => {

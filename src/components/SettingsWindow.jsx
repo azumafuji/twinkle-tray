@@ -18,7 +18,7 @@ import MonitorInfo from "./MonitorInfo"
 import MonitorFeatures from "./MonitorFeatures"
 import { SettingsOption, SettingsChild } from "./SettingsOption";
 import SafeRender from "./SafeRender";
-import { getMonitorName } from './utilts/monitor.util';
+import { getMonitorName, isAdjustableDisplay, displayLevel } from './utilts/monitor.util';
 import { LightSensorSettings } from "./light-sensor/LightSensorSettings";
 
 import DefaultIcon from "../assets/tray-icons/dark/icon@4x.png"
@@ -123,6 +123,7 @@ export default class SettingsWindow extends PureComponent {
         super(props)
         this.state = {
             rawSettings: {},
+            breakpointDrafts: {},
             activePage: "general",
             theme: 'default',
             openAtLogin: false,
@@ -247,7 +248,7 @@ export default class SettingsWindow extends PureComponent {
         // the panel. Unsupported monitors can have a null `key`, while this
         // collection itself is keyed independently of that value.
         const sorted = Object.values(this.state.monitors)
-            .filter(monitor => monitor.type != "none")
+            .filter(monitor => isAdjustableDisplay(monitor))
             .sort(monitorSort)
         const items = reorder(
             sorted,
@@ -712,7 +713,7 @@ export default class SettingsWindow extends PureComponent {
             return (<SettingsChild content={<div className="no-displays-message">{T.t("GENERIC_NO_COMPATIBLE_DISPLAYS")}<br /><br /></div>} />)
         } else {
             return Object.values(this.state.monitors).map((monitor, index) => {
-                if (monitor.type == "none") {
+                if (!isAdjustableDisplay(monitor)) {
                     return null
                 } else {
                     const monitorId = monitor.id || monitor.key
@@ -739,7 +740,7 @@ export default class SettingsWindow extends PureComponent {
             return (<div className="no-displays-message">{T.t("GENERIC_NO_COMPATIBLE_DISPLAYS")}<br /><br /></div>)
         } else {
             const sorted = Object.values(this.state.monitors)
-                .filter(monitor => monitor.type != "none")
+                .filter(monitor => isAdjustableDisplay(monitor))
                 .sort(monitorSort)
             return (
                 <DragDropContext onDragEnd={this.onDragEnd}>
@@ -848,7 +849,7 @@ export default class SettingsWindow extends PureComponent {
     getAdjustmentTimesMonitors = (time, index) => {
         if (this.state.adjustmentTimeIndividualDisplays) {
             return Object.values(this.state.monitors).map((monitor, idx) => {
-                if (monitor.type == "none") {
+                if (!isAdjustableDisplay(monitor)) {
                     return (<div key={monitor.id + ".brightness"}></div>)
                 } else {
                     let level = time.brightness
@@ -964,7 +965,9 @@ export default class SettingsWindow extends PureComponent {
 
     getHotkeyStatusIcon = hotkey => {
         if (hotkey?.active) {
-            return (<div className="status icon active">&#xE73E;</div>)
+            // Registration succeeding doesn't mean the keyboard sends these keys
+            const isNativeBrightnessKey = (hotkey.accelerator === "BrightnessUp" || hotkey.accelerator === "BrightnessDown")
+            return (<div className="status icon active" title={isNativeBrightnessKey ? T.t("SETTINGS_HOTKEYS_NATIVE_BRIGHTNESS_CHECK") : undefined}>&#xE73E;</div>)
         } else {
             return (<div className="status icon inactive"></div>)
         }
@@ -995,7 +998,7 @@ export default class SettingsWindow extends PureComponent {
         } else {
             return Object.values(this.state.monitors).map((monitor, index) => {
 
-                let brightness = monitor.brightness
+                let brightness = displayLevel(monitor.brightness)
                 let brightnessMax = monitor.brightnessMax
 
                 if (monitor.type == "ddcci" && !monitor.brightnessType) {
@@ -1097,10 +1100,10 @@ export default class SettingsWindow extends PureComponent {
                     const enabled = (this.state.rawSettings?.extendMinimumDisplays?.[monitor.key] ? true : false)
 
                     return (
-                        <SettingsChild key={monitor.key} className="breakpoint-child" icon="E7F4" title={getMonitorName(monitor, this.state.names)} input={
+                        <SettingsChild key={monitor.key} className="breakpoint-child" icon="E7F4" title={getMonitorName(monitor, this.state.names)} description={this.getGammaHDRNotice(monitor)} input={
                             <>
                                 <div className="breakpoint-field" data-enabled={enabled} title={T.t("SETTINGS_MONITORS_EXTEND_MINIMUM_BREAKPOINT")}>
-                                    <input type="number" min={EXTEND_MINIMUM_BREAKPOINT_MIN} max={EXTEND_MINIMUM_BREAKPOINT_MAX} disabled={!enabled} value={this.getExtendMinimumBreakpoint(monitor)} onChange={(e) => { this.setExtendMinimumBreakpoint(e.target.value, monitor) }} onBlur={(e) => { this.setExtendMinimumBreakpoint(e.target.value, monitor, true) }} />
+                                    <input type="number" min={EXTEND_MINIMUM_BREAKPOINT_MIN} max={EXTEND_MINIMUM_BREAKPOINT_MAX} disabled={!enabled} value={this.state.breakpointDrafts[monitor.key] ?? this.getExtendMinimumBreakpoint(monitor)} onChange={(e) => { this.setExtendMinimumBreakpointDraft(e.target.value, monitor) }} onBlur={(e) => { this.setExtendMinimumBreakpoint(e.target.value, monitor) }} onKeyDown={(e) => { if (e.key === "Enter") e.target.blur() }} />
                                     <div className="suffix">%</div>
                                 </div>
                                 <div className="inputToggle-generic">
@@ -1117,6 +1120,12 @@ export default class SettingsWindow extends PureComponent {
         }
     }
 
+    // Gamma ramps don't apply in HDR, so main skips these features until it's off.
+    // The toggle stays usable so the setting can still be changed.
+    getGammaHDRNotice = (monitor) => {
+        return (monitor?.hdr === "active" ? T.t("SETTINGS_MONITORS_GAMMA_HDR_UNAVAILABLE") : undefined)
+    }
+
     getGammaMonitorsSettings = () => {
         try {
             if (this.state.monitors == undefined || Object.keys(this.state.monitors).length == 0) {
@@ -1125,7 +1134,7 @@ export default class SettingsWindow extends PureComponent {
                 return Object.values(this.state.monitors).map((monitor, index) => {
 
                     return (
-                        <SettingsChild key={monitor.key} icon="E7F4" title={getMonitorName(monitor, this.state.names)} input={
+                        <SettingsChild key={monitor.key} icon="E7F4" title={getMonitorName(monitor, this.state.names)} description={this.getGammaHDRNotice(monitor)} input={
                             <div className="inputToggle-generic">
                                 <input onChange={(e) => { this.setGammaMonitor(e.target.checked, monitor) }} checked={(this.state.rawSettings?.gammaAsMainSliderDisplays?.[monitor.key] ? true : false)} data-checked={(this.state.rawSettings?.gammaAsMainSliderDisplays?.[monitor.key] ? true : false)} type="checkbox" />
                             </div>
@@ -1178,15 +1187,24 @@ export default class SettingsWindow extends PureComponent {
         this.setSetting("extendMinimumDisplays", extendMinimumDisplays)
     }
 
-    setExtendMinimumBreakpoint = (value, monitor, clamp = false) => {
-        const extendMinimumBreakpoints = Object.assign({}, this.state.rawSettings?.extendMinimumBreakpoints)
+    // Keep what's being typed local. Saving remaps the display's slider, so a
+    // partly typed number shouldn't be applied or clamped out from under the user.
+    setExtendMinimumBreakpointDraft = (value, monitor) => {
+        this.setState({ breakpointDrafts: { ...this.state.breakpointDrafts, [monitor.key]: value } })
+    }
 
-        // Only settle on a usable value once the field is done being edited,
-        // otherwise a partly typed number gets clamped out from under the user.
-        const breakpoint = parseInt(value)
-        extendMinimumBreakpoints[monitor.key] = (clamp
-            ? Math.min(EXTEND_MINIMUM_BREAKPOINT_MAX, Math.max(EXTEND_MINIMUM_BREAKPOINT_MIN, (breakpoint > 0 ? breakpoint : EXTEND_MINIMUM_BREAKPOINT_DEFAULT)))
-            : value)
+    // Commit once the user is done editing
+    setExtendMinimumBreakpoint = (value, monitor) => {
+        const breakpointDrafts = { ...this.state.breakpointDrafts }
+        delete breakpointDrafts[monitor.key]
+        this.setState({ breakpointDrafts })
+
+        const parsed = parseInt(value)
+        const breakpoint = Math.min(EXTEND_MINIMUM_BREAKPOINT_MAX, Math.max(EXTEND_MINIMUM_BREAKPOINT_MIN, (parsed > 0 ? parsed : EXTEND_MINIMUM_BREAKPOINT_DEFAULT)))
+        if (breakpoint === parseInt(this.getExtendMinimumBreakpoint(monitor))) return // Unchanged, so avoid a pointless refresh
+
+        const extendMinimumBreakpoints = Object.assign({}, this.state.rawSettings?.extendMinimumBreakpoints)
+        extendMinimumBreakpoints[monitor.key] = breakpoint
         this.setSetting("extendMinimumBreakpoints", extendMinimumBreakpoints)
     }
 
@@ -1305,7 +1323,7 @@ export default class SettingsWindow extends PureComponent {
         this.lastLevels = []
         let numMonitors = 0
         for (let key in newMonitors) {
-            if (newMonitors[key].type != "none") numMonitors++;
+            if (isAdjustableDisplay(newMonitors[key])) numMonitors++;
         }
         this.numMonitors = numMonitors
         this.setState({
@@ -1693,7 +1711,10 @@ export default class SettingsWindow extends PureComponent {
                                     <div className="sectionTitle">{T.t("SETTINGS_HOTKEYS_TITLE")}</div>
                                     <p>{T.t("SETTINGS_HOTKEYS_DESC")}</p>
                                     {hasNativeBrightnessHotkey ? (
-                                        <p>⚠️ <em>{T.t("SETTINGS_HOTKEYS_NATIVE_BRIGHTNESS_WARN")}</em></p>
+                                        <>
+                                            <p>⚠️ <em>{T.t("SETTINGS_HOTKEYS_NATIVE_BRIGHTNESS_WARN")}</em></p>
+                                            <p><em>{T.t("SETTINGS_HOTKEYS_NATIVE_BRIGHTNESS_CHECK")}</em></p>
+                                        </>
                                     ) : null}
                                     <div className="hotkey-monitors">
                                         {this.getHotkeyList()}
@@ -1950,7 +1971,7 @@ function addNewProfile(state) {
 
 function getProfileMonitors(monitors, profile, onChange) {
     return Object.values(monitors).map((monitor, idx) => {
-        if (monitor.type == "none") {
+        if (!isAdjustableDisplay(monitor)) {
             return (null)
         } else {
             let level = (profile.monitors?.[monitor.id] ?? 50)
@@ -2029,7 +2050,7 @@ function ActionItem(props) {
                 return (<div className="no-displays-message option-description" style={{lineHeight:1.35}}>{T.t("GENERIC_NO_COMPATIBLE_DISPLAYS")}</div>)
             } else {
                 return Object.values(monitors).map((monitor, index) => {
-                    if(monitor.type === "none") return null;
+                    if(!isAdjustableDisplay(monitor)) return null;
                     return (
                         <div key={monitor.key} className="feature-toggle-row">
                             <input onChange={e => {

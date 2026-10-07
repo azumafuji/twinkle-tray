@@ -1,18 +1,18 @@
-## What's Changed in v1.18.0-beta3
+## What's Changed in v1.18.0-beta4
 
-### 🖥️ Topology-Aware Brightness Normalization
-- **Automatic Setup Detection**: Twinkle Tray now automatically detects your active multi-monitor setup (e.g. *Laptop + Home Monitor* vs. *Laptop + Work Monitor*).
-- **Per-Setup Normalization Settings**: Brightness normalization limits (`min`/`max` limits and custom calibration curves) are now saved and restored per display setup. Switching docks or moving between home and work automatically switches to the correct calibration.
-- **Full Range for Standalone Laptops**: When unplugged and running on the laptop panel alone, brightness normalization defaults to the full, unconstrained 0%–100% native brightness range. Clamps set to match dimmer external monitors no longer restrict your laptop screen when undocked.
-- **Active Setup Indicator**: **Settings → Monitors → Normalize Brightness** now displays a badge indicating the active display setup being configured.
+### ⏱️ Time Adjustments & Context Menu Feedback
+- **Pause Time Adjustments Toggle**: "Pause Time Adjustments" (and "Pause Idle Detection") in the taskbar context menu now operate as clear toggles featuring both native checkmarks (`✓`) and a `(Paused)` label suffix when active.
+- **Taskbar Hover Status**: Hovering over the Twinkle Tray notification icon in the taskbar now displays tooltip feedback indicating whether time adjustments or idle detection are paused (e.g. `Twinkle Tray (75%) - Time adjustments paused`).
+- **Instant Unpause Re-application**: Resuming time adjustments immediately forces re-application of the scheduled brightness event without delay.
+- **State Synchronization**: Pause states and tray menu entries now automatically synchronize when adjustment times or idle detection settings are altered.
 
-### 🚀 Windows ARM64 & Release Automation
-- **Windows on ARM (ARM64) Installer**: Standalone `.exe` installers are now built for ARM64 devices (Snapdragon X Elite/Plus, Surface Pro, etc.).
-- **Automated GitHub Releases**: Builds now publish release binaries (`.exe` and `.appx` for both x64 and ARM64) when tags are pushed.
-- Added manual `workflow_dispatch` trigger in GitHub Actions.
+### 🛠️ Additional Fixes & Improvements
+- **Monitor Renaming & WMI**: Fixed monitor rename input handling and key mappings for WMI displays.
+- **Update Checks**: Resolved pre-release semver comparison and update repository targeting.
+- **Schedule Interpolation**: Improved Time of Day LERP transitions across midnight boundaries and multi-display configurations.
 
 ### 📦 Artifacts Included
-- `Twinkle.Tray.v1.18.0-beta3.exe` (Windows x64 installer)
-- `Twinkle.Tray.v1.18.0-beta3-arm64.exe` (Windows ARM64 installer)
-- `Twinkle.Tray.v1.18.0-beta3-store.appx` (Windows x64 Store AppX)
-- `Twinkle.Tray.v1.18.0-beta3-store-arm64.appx` (Windows ARM64 Store AppX)
+- `Twinkle.Tray.v1.18.0-beta4.exe` (Windows x64 installer)
+- `Twinkle.Tray.v1.18.0-beta4-arm64.exe` (Windows ARM64 installer)
+- `Twinkle.Tray.v1.18.0-beta4-store.appx` (Windows x64 Store AppX)
+- `Twinkle.Tray.v1.18.0-beta4-store-arm64.appx` (Windows ARM64 Store AppX)

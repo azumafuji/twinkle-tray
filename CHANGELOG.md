@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.18.0-beta4] - 2026-10-07
+
+### Added
+- **Pause Time Adjustments Toggle & Visual Feedback**:
+  - Taskbar context menu options "Pause Time Adjustments" and "Pause Idle Detection" are now true checkbox toggles displaying the native checkmark (`✓`) and a `(Paused)` label suffix when active.
+  - Hovering over the Twinkle Tray taskbar notification icon now displays tooltip status indicating when time adjustments or idle detection are paused.
+  - Unpausing time adjustments immediately forces re-application of the scheduled brightness event without delay.
+  - Temporary pause states and tray menu items automatically synchronize and reset when schedules or features are modified in Settings.
+
+### Changed
+- **Monitor Renaming & Key Mapping**: Fixed monitor renaming input handling and key mappings for WMI displays.
+- **Update Checks**: Fixed update check repository target and semver pre-release comparisons.
+- **Schedule Interpolation**: Improved Time of Day LERP schedule transitions across midnight and multi-display configurations.
+- Bumped project version to `1.18.0-beta4`.
+
 ## [1.18.0-beta3] - 2026-09-26
 
 ### Added
